@@ -38,7 +38,7 @@ jobs:
           INST: ${{ github.event.inputs.inst || 'XRP-USDT-SWAP' }}
           DAYS: ${{ github.event.inputs.days || '90' }}
           BAR: ${{ github.event.inputs.base_bar || '3m' }}
-        run: python3 okx_fetch.py --inst "$INST" --days "$DAYS" --base-bar "$BAR"
+        run: python3 okx_fetch.py --inst "$INST" --days "$DAYS" --bar "$BAR"
 
       - name: Commit CSVs
         env:

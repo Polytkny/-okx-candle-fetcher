@@ -17,7 +17,7 @@ Actions 分頁 → **Fetch OKX candles** → Run workflow，填合約 ID、天�
 
 ```bash
 pip install requests
-python3 okx_fetch.py --inst XRP-USDT-SWAP --days 90 --base-bar 3m
+python3 okx_fetch.py --inst XRP-USDT-SWAP --days 90 --bar 3m
 ```
 
 ## 原理

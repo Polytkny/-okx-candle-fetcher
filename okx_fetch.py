@@ -7,7 +7,7 @@ OKX 永續合約歷史K線抓取工具（公開資料，無任何交易邏輯）
 能被目標週期整除就能自己合併出來，不用一個一個跟OKX要。
 
 用法：
-    python3 okx_fetch.py --inst XRP-USDT-SWAP --days 90 --base-bar 3m
+    python3 okx_fetch.py --inst XRP-USDT-SWAP --days 90 --bar 3m
 
 只用到 requests，打的是 OKX 公開行情端點，不需要任何 API 金鑰。
 """
@@ -119,7 +119,9 @@ def save_csv(path: str, candles: list[Candle]) -> None:
 
 # 目標週期(分鐘) -> 需要合併幾根基礎K棒。基礎K棒週期由 --base-bar 決定，
 # 這裡假設基礎是3分鐘（BASE_MINUTES=3），全部都整除，見檔案開頭說明。
-BASE_MINUTES = 3
+# 基礎K棒週期字串 -> 分鐘數。原本這裡寫死 3，選別的 --bar 會用錯的倍數去合併，
+# 而且不會報錯，只會安靜地產生錯誤的K線。
+BAR_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
 TARGET_MINUTES = [15, 30, 60, 90, 120, 180, 240]
 
 
@@ -130,18 +132,24 @@ def main() -> None:
     ap.add_argument("--days", type=int, default=90, help="要往回抓幾天的資料")
     args = ap.parse_args()
 
+    base_minutes = BAR_MINUTES.get(args.bar)
+    if base_minutes is None:
+        raise SystemExit(f"不支援的基礎週期 {args.bar}，可用：{', '.join(BAR_MINUTES)}")
+
     now_ms = int(time.time() * 1000)
     after_ms = now_ms - args.days * 24 * 60 * 60 * 1000
     print(f"抓取 {args.inst} {args.bar} K棒，往回 {args.days} 天...")
     base = fetch_history_candles(args.inst, args.bar, before_ms=now_ms, after_ms=after_ms)
     print(f"共抓到 {len(base)} 根基礎K棒")
-    save_csv("ohlc_3m_raw.csv", base)
+    raw_path = f"ohlc_{args.bar}_raw.csv"
+    save_csv(raw_path, base)
+    print(f"{raw_path}：{len(base)} 根")
 
     for minutes in TARGET_MINUTES:
-        if minutes % BASE_MINUTES != 0:
-            print(f"跳過 {minutes} 分鐘：無法被基礎週期 {BASE_MINUTES} 分鐘整除")
+        if minutes % base_minutes != 0:
+            print(f"跳過 {minutes} 分鐘：無法被基礎週期 {base_minutes} 分鐘整除")
             continue
-        group_size = minutes // BASE_MINUTES
+        group_size = minutes // base_minutes
         merged = resample(base, group_size)
         path = f"ohlc_{minutes}m.csv"
         save_csv(path, merged)
