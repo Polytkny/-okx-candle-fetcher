@@ -1,27 +1,28 @@
 name: Fetch OKX candles
 
-# 公開 repo 的 GitHub-hosted runner 是免費不限量的，不吃私有 repo 的分鐘數配額。
-# 這支 workflow 只打 OKX 的公開行情端點，不需要任何 API 金鑰或 secrets。
+# 公開 repo 的 GitHub-hosted runner 免費不限量，不吃私有 repo 的分鐘數配額。
+# 只打 OKX 公開行情端點，不需要任何 API 金鑰或 secrets。
 
 on:
   workflow_dispatch:
     inputs:
-      inst:
-        description: "OKX 合約 ID，例如 XRP-USDT-SWAP / SOL-USDT-SWAP / BTC-USDT-SWAP"
+      insts:
+        description: "OKX 合約 ID，用逗號分隔可一次抓多個（一個 run 只推一次，避免並行 push 打架）"
         required: false
-        default: "XRP-USDT-SWAP"
+        default: "BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP,XRP-USDT-SWAP"
       days:
         description: "往回抓幾天"
         required: false
-        default: "90"
+        default: "720"
       base_bar:
-        description: "基礎 K 棒週期。網格策略要測 0.8% 間距，建議用 3m"
+        description: "基礎K棒週期。趨勢策略用20日通道，30m 跑兩年就夠；要測網格才需要 3m"
         required: false
-        default: "3m"
+        default: "30m"
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
       contents: write
     steps:
@@ -33,35 +34,35 @@ jobs:
 
       - run: pip install requests
 
-      - name: Fetch candles from OKX
+      - name: Fetch every instrument
         env:
-          INST: ${{ github.event.inputs.inst || 'XRP-USDT-SWAP' }}
-          DAYS: ${{ github.event.inputs.days || '90' }}
-          BAR: ${{ github.event.inputs.base_bar || '3m' }}
-        run: python3 okx_fetch.py --inst "$INST" --days "$DAYS" --bar "$BAR"
-
-      - name: Commit CSVs
-        env:
-          INST: ${{ github.event.inputs.inst || 'XRP-USDT-SWAP' }}
-          DAYS: ${{ github.event.inputs.days || '90' }}
-          BAR: ${{ github.event.inputs.base_bar || '3m' }}
+          INSTS: ${{ github.event.inputs.insts || 'BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP,XRP-USDT-SWAP' }}
+          DAYS: ${{ github.event.inputs.days || '720' }}
+          BAR: ${{ github.event.inputs.base_bar || '30m' }}
         run: |
           mkdir -p data
-          # 原始細粒度K棒是回測網格最需要的，壓縮後再存（數字型CSV壓縮率很高）
-          gzip -c "ohlc_${BAR}_raw.csv" > "data/${INST}_${BAR}_${DAYS}d.csv.gz"
-          for f in ohlc_15m.csv ohlc_30m.csv; do
-            [ -f "$f" ] && gzip -c "$f" > "data/${INST}_$(basename "$f" .csv | sed 's/ohlc_//')_${DAYS}d.csv.gz"
+          IFS=',' read -ra LIST <<< "$INSTS"
+          for INST in "${LIST[@]}"; do
+            INST=$(echo "$INST" | xargs)          # 去掉前後空白
+            [ -z "$INST" ] && continue
+            echo "::group::$INST"
+            # 單一標的失敗不要中斷整批，其他標的照抓
+            if python3 okx_fetch.py --inst "$INST" --days "$DAYS" --bar "$BAR"; then
+              gzip -c "ohlc_${BAR}_raw.csv" > "data/${INST}_${BAR}_${DAYS}d.csv.gz"
+              echo "✅ $INST -> data/${INST}_${BAR}_${DAYS}d.csv.gz"
+            else
+              echo "⚠️ $INST 抓取失敗，跳過"
+            fi
+            echo "::endgroup::"
           done
           ls -la data/
+
+      - name: Commit CSVs
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
           git diff --cached --quiet && echo "no change" || \
-            git commit -m "data: ${INST} ${BAR} ${DAYS}d (snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ))"
-          git push origin HEAD:${{ github.ref_name }}
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: okx-${{ github.run_id }}
-          path: ohlc_*.csv
-          retention-days: 14
+            git commit -m "data: ${{ github.event.inputs.insts }} ${{ github.event.inputs.base_bar }} ${{ github.event.inputs.days }}d (snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git pull --rebase origin main || true
+          git push origin HEAD:main
