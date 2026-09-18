@@ -1,0 +1,67 @@
+name: Fetch OKX candles
+
+# 公開 repo 的 GitHub-hosted runner 是免費不限量的，不吃私有 repo 的分鐘數配額。
+# 這支 workflow 只打 OKX 的公開行情端點，不需要任何 API 金鑰或 secrets。
+
+on:
+  workflow_dispatch:
+    inputs:
+      inst:
+        description: "OKX 合約 ID，例如 XRP-USDT-SWAP / SOL-USDT-SWAP / BTC-USDT-SWAP"
+        required: false
+        default: "XRP-USDT-SWAP"
+      days:
+        description: "往回抓幾天"
+        required: false
+        default: "90"
+      base_bar:
+        description: "基礎 K 棒週期。網格策略要測 0.8% 間距，建議用 3m"
+        required: false
+        default: "3m"
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Fetch candles from OKX
+        env:
+          INST: ${{ github.event.inputs.inst || 'XRP-USDT-SWAP' }}
+          DAYS: ${{ github.event.inputs.days || '90' }}
+          BAR: ${{ github.event.inputs.base_bar || '3m' }}
+        run: python3 okx_fetch.py --inst "$INST" --days "$DAYS" --base-bar "$BAR"
+
+      - name: Commit CSVs
+        env:
+          INST: ${{ github.event.inputs.inst || 'XRP-USDT-SWAP' }}
+          DAYS: ${{ github.event.inputs.days || '90' }}
+          BAR: ${{ github.event.inputs.base_bar || '3m' }}
+        run: |
+          mkdir -p data
+          # 原始細粒度K棒是回測網格最需要的，壓縮後再存（數字型CSV壓縮率很高）
+          gzip -c "ohlc_${BAR}_raw.csv" > "data/${INST}_${BAR}_${DAYS}d.csv.gz"
+          for f in ohlc_15m.csv ohlc_30m.csv; do
+            [ -f "$f" ] && gzip -c "$f" > "data/${INST}_$(basename "$f" .csv | sed 's/ohlc_//')_${DAYS}d.csv.gz"
+          done
+          ls -la data/
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && echo "no change" || \
+            git commit -m "data: ${INST} ${BAR} ${DAYS}d (snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: okx-${{ github.run_id }}
+          path: ohlc_*.csv
+          retention-days: 14
