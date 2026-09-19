@@ -1,0 +1,57 @@
+name: Paper trade
+
+# 每 12 小時跑一次，對齊 12 小時 K 的收盤（00:00 與 12:00 UTC）。
+# 延後 10 分鐘啟動，讓 OKX 那根 K 棒確實標記為已收盤。
+# 只打公開行情端點，不下單、不需要任何 API 金鑰或 secrets。
+
+on:
+  schedule:
+    - cron: "10 0,12 * * *"
+  workflow_dispatch:
+    inputs:
+      insts:
+        description: "標的，逗號分隔"
+        required: false
+        default: "BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP,XRP-USDT-SWAP,DOGE-USDT-SWAP"
+
+# 同時只跑一個，避免兩次執行同時改狀態檔而互相覆蓋
+concurrency:
+  group: paper-trade
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+
+      - name: Run paper trade
+        env:
+          INSTS: ${{ github.event.inputs.insts || 'BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP,XRP-USDT-SWAP,DOGE-USDT-SWAP' }}
+        run: |
+          mkdir -p paper
+          python3 paper_trade.py --insts "$INSTS" \
+            --state paper/paper_state.json \
+            --log paper/paper_decisions.jsonl
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add paper/
+          git diff --cached --quiet && echo "無變更" && exit 0
+          git commit -q -m "paper: $(date -u +%Y-%m-%dT%H:%MZ)"
+          # 排程與手動觸發可能撞在一起，重試幾次再放棄
+          for i in 1 2 3 4; do
+            git pull --rebase -q origin main && git push -q origin HEAD:main && exit 0
+            sleep $((i * 4))
+          done
+          echo "⚠️ 推送失敗，這一輪的結果沒有存檔"
+          exit 1
