@@ -1,0 +1,81 @@
+{
+ "created": "2026-09-19T11:15:08.568785+00:00",
+ "rules": {
+  "bar_hours": 12,
+  "entry_days": 20,
+  "exit_days": 7,
+  "fee": 0.0005
+ },
+ "last_bar": {
+  "BTC-USDT-SWAP": 1789732800000,
+  "ETH-USDT-SWAP": 1789732800000,
+  "SOL-USDT-SWAP": 1789732800000,
+  "XRP-USDT-SWAP": 1789732800000,
+  "DOGE-USDT-SWAP": 1789732800000
+ },
+ "variants": {
+  "long_only": {
+   "cash": {
+    "BTC-USDT-SWAP": 100.0,
+    "ETH-USDT-SWAP": 100.0,
+    "SOL-USDT-SWAP": 99.95,
+    "XRP-USDT-SWAP": 100.0,
+    "DOGE-USDT-SWAP": 100.0
+   },
+   "positions": {
+    "SOL-USDT-SWAP": {
+     "side": 1,
+     "entry": 111.7,
+     "ts_ms": 1789732800000
+    }
+   },
+   "first_price": {
+    "BTC-USDT-SWAP": 81290.6,
+    "ETH-USDT-SWAP": 2636.67,
+    "SOL-USDT-SWAP": 111.7,
+    "XRP-USDT-SWAP": 1.4207,
+    "DOGE-USDT-SWAP": 0.08806
+   }
+  },
+  "long_short": {
+   "cash": {
+    "BTC-USDT-SWAP": 100.0,
+    "ETH-USDT-SWAP": 100.0,
+    "SOL-USDT-SWAP": 99.95,
+    "XRP-USDT-SWAP": 100.0,
+    "DOGE-USDT-SWAP": 100.0
+   },
+   "positions": {
+    "SOL-USDT-SWAP": {
+     "side": 1,
+     "entry": 111.7,
+     "ts_ms": 1789732800000
+    }
+   },
+   "first_price": {
+    "BTC-USDT-SWAP": 81290.6,
+    "ETH-USDT-SWAP": 2636.67,
+    "SOL-USDT-SWAP": 111.7,
+    "XRP-USDT-SWAP": 1.4207,
+    "DOGE-USDT-SWAP": 0.08806
+   }
+  },
+  "buy_hold": {
+   "cash": {
+    "BTC-USDT-SWAP": 100.0,
+    "ETH-USDT-SWAP": 100.0,
+    "SOL-USDT-SWAP": 100.0,
+    "XRP-USDT-SWAP": 99.99999999999999,
+    "DOGE-USDT-SWAP": 99.99999999999999
+   },
+   "positions": {},
+   "first_price": {
+    "BTC-USDT-SWAP": 81290.6,
+    "ETH-USDT-SWAP": 2636.67,
+    "SOL-USDT-SWAP": 111.7,
+    "XRP-USDT-SWAP": 1.4207,
+    "DOGE-USDT-SWAP": 0.08806
+   }
+  }
+ }
+}
