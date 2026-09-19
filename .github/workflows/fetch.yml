@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       insts:
-        description: "OKX 合約 ID，用逗號分隔可一次抓多個（一個 run 只推一次，避免並行 push 打架）"
+        description: "OKX 合約 ID，用逗號分隔可一次抓多個"
         required: false
         default: "BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP,XRP-USDT-SWAP"
       days:
@@ -18,11 +18,15 @@ on:
         description: "基礎K棒週期。趨勢策略用20日通道，30m 跑兩年就夠；要測網格才需要 3m"
         required: false
         default: "30m"
+      funding:
+        description: "同時抓資金費率（true/false）。8 小時一筆，成本遠低於 K 線"
+        required: false
+        default: "false"
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 300
     permissions:
       contents: write
     steps:
@@ -39,30 +43,53 @@ jobs:
           INSTS: ${{ github.event.inputs.insts || 'BTC-USDT-SWAP,ETH-USDT-SWAP,SOL-USDT-SWAP,XRP-USDT-SWAP' }}
           DAYS: ${{ github.event.inputs.days || '720' }}
           BAR: ${{ github.event.inputs.base_bar || '30m' }}
+          FUNDING: ${{ github.event.inputs.funding || 'false' }}
         run: |
           mkdir -p data
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 每抓完一個標的就推一次。原本等全部跑完才 commit，一旦撞到 job
+          # timeout 就整批丟失；逐一提交也讓長時間的 run 看得到進度。
+          push_one () {
+            git add data/ || true
+            if git diff --cached --quiet; then
+              echo "（無變更）"
+              return
+            fi
+            git commit -q -m "data: $1 ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+            for attempt in 1 2 3 4; do
+              git pull --rebase -q origin main && git push -q origin HEAD:main && return
+              echo "推送失敗，第 $attempt 次重試"
+              sleep $((attempt * 4))
+            done
+            echo "⚠️ 推送重試用盡，繼續抓下一個標的"
+          }
+
           IFS=',' read -ra LIST <<< "$INSTS"
           for INST in "${LIST[@]}"; do
             INST=$(echo "$INST" | xargs)          # 去掉前後空白
             [ -z "$INST" ] && continue
             echo "::group::$INST"
+
             # 單一標的失敗不要中斷整批，其他標的照抓
             if python3 okx_fetch.py --inst "$INST" --days "$DAYS" --bar "$BAR"; then
               gzip -c "ohlc_${BAR}_raw.csv" > "data/${INST}_${BAR}_${DAYS}d.csv.gz"
-              echo "✅ $INST -> data/${INST}_${BAR}_${DAYS}d.csv.gz"
+              echo "✅ $INST K線 -> data/${INST}_${BAR}_${DAYS}d.csv.gz"
             else
-              echo "⚠️ $INST 抓取失敗，跳過"
+              echo "⚠️ $INST K線抓取失敗，跳過"
             fi
+
+            if [ "$FUNDING" = "true" ]; then
+              if python3 okx_funding.py --inst "$INST" --days "$DAYS" --out funding_raw.csv; then
+                gzip -c funding_raw.csv > "data/${INST}_funding_${DAYS}d.csv.gz"
+                echo "✅ $INST 資金費率 -> data/${INST}_funding_${DAYS}d.csv.gz"
+              else
+                echo "⚠️ $INST 資金費率抓取失敗，跳過"
+              fi
+            fi
+
+            push_one "$INST"
             echo "::endgroup::"
           done
           ls -la data/
-
-      - name: Commit CSVs
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
-          git diff --cached --quiet && echo "no change" || \
-            git commit -m "data: ${{ github.event.inputs.insts }} ${{ github.event.inputs.base_bar }} ${{ github.event.inputs.days }}d (snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ))"
-          git pull --rebase origin main || true
-          git push origin HEAD:main
